@@ -1,41 +1,64 @@
-import sqlite3
-import matplotlib
+from config import *
+from logic import *
+import discord
+from discord.ext import commands
+from config import TOKEN
+import os
 
-# Arka planda grafik kaydetmek için pencere açılmasını engelle
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-import cartopy.crs as ccrs  # Harita projeksiyonları için
 
-class DB_Map:
-    def __init__(self, database):
-        self.database = database  # Veri tabanı yolunu ayarla
-    def create_graph(self, path, cities):
-            ax = plt.axes(projection=ccrs.PlateCarree())
-            ax.stock_img()
-            for city in cities:
-                coordinates = self.get_coordinates(city)
-                if coordinates:
-                    lat, lng = coordinates
-                    plt.plot([lng], [lat], color='r', linewidth=1, marker='.', transform=ccrs.Geodetic())
-                    plt.text(lng + 3, lat + 12, city, horizontalalignment='left', transform=ccrs.Geodetic())
-            plt.savefig(path)
-            plt.close()
-    def draw_distance(self, city1, city2):
-            # İki şehir arasındaki mesafeyi göstermek için bir çizgi çizme
-            city1_coords = self.get_coordinates(city1)
-            city2_coords = self.get_coordinates(city2)
-            fig, ax = plt.subplots(subplot_kw={'projection': ccrs.PlateCarree()})
-            ax.stock_img()
-            plt.plot([city1_coords[1], city2_coords[1]], [city1_coords[0], city2_coords[0]], color='red', linewidth=2,
-                    marker='o', transform=ccrs.Geodetic())
-            plt.text(city1_coords[1] + 3, city1_coords[0] + 12, city1, horizontalalignment='left',
-                    transform=ccrs.Geodetic())
-            plt.text(city2_coords[1] + 3, city2_coords[0] + 12, city2, horizontalalignment='left',
-                    transform=ccrs.Geodetic())
-            plt.savefig('distance_map.png')
-            plt.close()
+manager = DB_Map("database.db")
 
+bot = commands.Bot(command_prefix="!", intents=discord.Intents.all())
+
+@bot.event
+async def on_ready():
+    print("Bot başlatıldı!")
+
+@bot.command()
+async def start(ctx: commands.Context):
+    await ctx.send(f"Merhaba, {ctx.author.name}. Mevcut komutlarin listesini keşfetmek için !help_me yazin.")
+
+@bot.command()
+async def help_me(ctx: commands.Context):
+    commands_list = (
+        "**Mevcut Komutlarimiz:**\n"
+        "`!start` - Botu baslatir.\n"
+        "`!help_me` - Yardim mesajini gonderir.\n"
+        "`!remember_city <şehir adı>` - Sehri kaydeder.\n"
+        "`!show_city <şehir adı>` - Belirtilen sehrin haritasini gosterir.\n"
+        "`!show_my_cities` - Kayitli sehirlerin hartisini gosterir.\n"
+    )
+    await ctx.send(commands_list)
+
+@bot.command()
+async def show_city(ctx: commands.Context, *, city_name=""):
+
+    if not city_name:
+        await ctx.send("Hatalı format. Lütfen şehir adını İngilizce olarak ve komutan sonra bir boşluk bırakarak çerçevesinde bulunmaktadır.")
+        return
+    manager.create_graph(f'{ctx.author.id}.png', [city_name])
+    await ctx.send(file=discord.File(f'{ctx.author.id}.png'))
+
+
+@bot.command()
+async def show_my_cities(ctx: commands.Context):
+    cities = manager.select_cities(ctx.author.id)
+    if cities:
+        manager.create_graph(f'{ctx.author.id}.cities.png', cities)
+        await ctx.send(file=discord.File(f'{ctx.author.id}_cities.png'))
+    else:
+        await ctx.send("Henüz hiç şehir kaydetmediniz.")
+
+@bot.command()
+async def remember_city(ctx: commands.Context, *, city_name=""):
+    if not city_name:
+        await ctx.send("Istediginiz sehir adini girin, orn olarak: `!remember_city Tokyo`")
+        return
+
+    if manager.add_city(ctx.author.id, city_name):
+        await ctx.send(f"'{city_name}' Kayit basarili")
+    else:
+        await ctx.send("Sehir veritabaninda yok.")
 
 if __name__ == "__main__":
-    m = DB_Map("database.db")
-    m.create_user_table()
+    bot.run(TOKEN)
